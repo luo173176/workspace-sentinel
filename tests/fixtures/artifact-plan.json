@@ -1,0 +1,11 @@
+{
+  "candidates": [
+    {
+      "path": "$ROOT/final.pptx",
+      "support": []
+    }
+  ],
+  "intermediates": [
+    "$ROOT/draft.tmp"
+  ]
+}

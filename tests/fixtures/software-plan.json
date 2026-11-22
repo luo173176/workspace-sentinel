@@ -1,0 +1,23 @@
+{
+  "description": "CLI software finalization",
+  "keep": [
+    "$ROOT/dist"
+  ],
+  "quarantine": [
+    "$ROOT/src"
+  ],
+  "verification": {
+    "kind": "exit",
+    "command": {
+      "argv": [
+        "$NODE",
+        "$ROOT/dist/app.js"
+      ],
+      "cwd": "$ROOT",
+      "timeoutMs": 1000
+    }
+  },
+  "cloud": {
+    "intent": "none"
+  }
+}
