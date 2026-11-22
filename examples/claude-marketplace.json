@@ -1,0 +1,14 @@
+{
+  "name": "workspace-sentinel-local",
+  "description": "Local marketplace entry for the Workspace Sentinel plugin.",
+  "owner": {
+    "name": "Workspace Sentinel contributors"
+  },
+  "plugins": [
+    {
+      "name": "workspace-sentinel",
+      "source": "./plugins/workspace-sentinel",
+      "description": "Keep only intentional workspace outputs and finalize projects safely."
+    }
+  ]
+}

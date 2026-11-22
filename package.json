@@ -1,0 +1,32 @@
+{
+  "name": "dsh-workspace-sentinel",
+  "version": "0.1.0",
+  "description": "Workspace hygiene and safe finalization for Codex, Claude Code, and DeepSeek Harness",
+  "type": "module",
+  "main": "./index.js",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "src/",
+    "skills/",
+    "hooks/",
+    ".codex-plugin/",
+    ".claude-plugin/",
+    "examples/",
+    "VALIDATION.md",
+    "README.md",
+    "LICENSE"
+  ],
+  "license": "MIT"
+}

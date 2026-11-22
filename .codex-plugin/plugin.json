@@ -1,0 +1,28 @@
+{
+  "name": "workspace-sentinel",
+  "version": "0.1.0",
+  "description": "Prevent Agent workspace clutter and finalize projects under explicit, recoverable safety rules.",
+  "author": {
+    "name": "Workspace Sentinel contributors"
+  },
+  "license": "MIT",
+  "keywords": [
+    "workspace",
+    "cleanup",
+    "agent-safety",
+    "artifacts"
+  ],
+  "skills": "./skills/",
+  "hooks": "./hooks/codex.json",
+  "interface": {
+    "displayName": "Workspace Sentinel",
+    "shortDescription": "Keep only intentional workspace outputs",
+    "longDescription": "Tracks task-owned files, protects preexisting work, and applies user-confirmed artifact or software finalization.",
+    "developerName": "Workspace Sentinel contributors",
+    "category": "Productivity",
+    "capabilities": [
+      "Read",
+      "Write"
+    ]
+  }
+}

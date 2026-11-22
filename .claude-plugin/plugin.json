@@ -1,0 +1,18 @@
+{
+  "name": "workspace-sentinel",
+  "displayName": "Workspace Sentinel",
+  "version": "0.1.0",
+  "description": "Prevent Agent workspace clutter and finalize projects under explicit, recoverable safety rules.",
+  "author": {
+    "name": "Workspace Sentinel contributors"
+  },
+  "license": "MIT",
+  "keywords": [
+    "workspace",
+    "cleanup",
+    "agent-safety",
+    "artifacts"
+  ],
+  "skills": "./skills/",
+  "hooks": "./hooks/claude.json"
+}

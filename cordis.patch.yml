@@ -1,0 +1,3 @@
+- insert:
+    - id: workspace-sentinel
+      name: dsh-workspace-sentinel
