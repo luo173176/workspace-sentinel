@@ -151,4 +151,6 @@ Report:
 - files quarantined and batch ID;
 - files permanently deleted;
 - files skipped and the safety reason;
-- hooks are workflow guardrails, not a security sandbox. If a host cannot observe a file's creation, treat it as unknown and leave it untouched.
+- verification result and any cloud evidence method.
+
+Hooks are workflow guardrails, not a security sandbox. If a host cannot observe a file's creation, treat it as unknown and leave it untouched.
