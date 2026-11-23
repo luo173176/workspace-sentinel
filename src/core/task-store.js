@@ -30,7 +30,7 @@ async function persistState(state) {
   await rename(temporary, state.statePath)
 }
 
-export async function createTask({ dataDir, root, mode, sessionId }) {
+export async function createTask({ dataDir, root, mode, sessionId, ignore }) {
   assertMode(mode)
   const absoluteRoot = await realpath(root)
   await mkdir(dataDir, { recursive: true })
@@ -49,6 +49,8 @@ export async function createTask({ dataDir, root, mode, sessionId }) {
   await mkdir(taskDir, { recursive: true })
   await mkdir(scratchDir, { recursive: true })
 
+  const baselineIgnoreRoots = []
+  const baseline = await snapshotTree(absoluteRoot, { ignore, ignoredDirs: baselineIgnoreRoots })
   const state = {
     version: 1,
     id,
@@ -62,7 +64,8 @@ export async function createTask({ dataDir, root, mode, sessionId }) {
     taskDir,
     statePath: path.join(taskDir, 'state.json'),
     scratchDir,
-    baseline: await snapshotTree(absoluteRoot),
+    baseline,
+    baselineIgnoreRoots,
     evidence: {},
     artifact: null,
     software: null,
@@ -131,6 +134,32 @@ export async function disposeTaskScratch(state) {
   await rm(expected, { recursive: true, force: true })
 }
 
+function pidIsAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    // EPERM: the process exists but we may not signal it — still alive.
+    return error?.code === 'EPERM'
+  }
+}
+
+async function readLockMetadata(lockPath) {
+  try {
+    return JSON.parse(await readFile(lockPath, 'utf8'))
+  } catch {
+    return null
+  }
+}
+
+function lockedError(state, lockPath) {
+  return new WorkspaceSentinelError('TASK_ROOT_LOCKED', 'Another task is finalizing this root', {
+    root: state.realRoot,
+    lockPath,
+  })
+}
+
 export async function withRootLock(state, operation) {
   const locksDir = path.join(state.dataDir, 'locks')
   await mkdir(locksDir, { recursive: true })
@@ -140,13 +169,23 @@ export async function withRootLock(state, operation) {
   try {
     handle = await open(lockPath, 'wx', 0o600)
   } catch (error) {
-    if (error?.code === 'EEXIST') {
-      throw new WorkspaceSentinelError('TASK_ROOT_LOCKED', 'Another task is finalizing this root', {
-        root: state.realRoot,
-        lockPath,
-      })
+    if (error?.code !== 'EEXIST') throw error
+    // A lock from a process that is gone (crash) must not block forever.
+    // Reclaim it once, then retry; a live owner still wins the race below.
+    const existing = await readLockMetadata(lockPath)
+    const stale = !existing || !pidIsAlive(existing.pid)
+    if (!stale) throw lockedError(state, lockPath)
+    try {
+      await unlink(lockPath)
+    } catch (unlinkError) {
+      if (unlinkError?.code !== 'ENOENT') throw unlinkError
     }
-    throw error
+    try {
+      handle = await open(lockPath, 'wx', 0o600)
+    } catch (retryError) {
+      if (retryError?.code === 'EEXIST') throw lockedError(state, lockPath)
+      throw retryError
+    }
   }
 
   try {

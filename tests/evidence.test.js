@@ -128,3 +128,67 @@ test('an unexpected evidence class fails closed as unknown', async (t) => {
 
   assert.equal(classifyPath(state, target), 'unknown')
 })
+
+test('snapshotTree ignores .git and node_modules by default', async (t) => {
+  const root = await tempRoot(t)
+  await writeFile(path.join(root, 'keep.txt'), 'k')
+  await mkdir(path.join(root, '.git'))
+  await writeFile(path.join(root, '.git', 'config'), 'x')
+  await mkdir(path.join(root, 'node_modules'))
+  await mkdir(path.join(root, 'node_modules', 'pkg'))
+  await writeFile(path.join(root, 'node_modules', 'pkg', 'index.js'), 'x')
+  await mkdir(path.join(root, 'src'))
+  await writeFile(path.join(root, 'src', 'main.js'), 'x')
+
+  const snapshot = await snapshotTree(root)
+  assert.deepEqual(Object.keys(snapshot).sort(), ['keep.txt', 'src/main.js'])
+  // Non-ignored files keep exactly the same fingerprint as before the change.
+  assert.equal(
+    snapshot['src/main.js'].sha256,
+    createHash('sha256').update(Buffer.from('x')).digest('hex'),
+  )
+})
+
+test('snapshotTree honors a custom ignore list that replaces the defaults', async (t) => {
+  const root = await tempRoot(t)
+  await writeFile(path.join(root, 'a.txt'), 'a')
+  await mkdir(path.join(root, 'build'))
+  await writeFile(path.join(root, 'build', 'out.js'), 'x')
+  await mkdir(path.join(root, 'node_modules'))
+  await writeFile(path.join(root, 'node_modules', 'm.js'), 'x')
+
+  const snapshot = await snapshotTree(root, { ignore: ['build'] })
+  assert.deepEqual(Object.keys(snapshot).sort(), ['a.txt', 'node_modules/m.js'])
+})
+
+test('ignored directories present at baseline keep preexisting ownership', async (t) => {
+  const root = await tempRoot(t)
+  await mkdir(path.join(root, '.git'))
+  await writeFile(path.join(root, '.git', 'config'), '[core]')
+  await mkdir(path.join(root, 'node_modules'))
+  await writeFile(path.join(root, 'node_modules', 'm.js'), 'x')
+
+  const ignoredDirs = []
+  const baseline = await snapshotTree(root, { ignoredDirs })
+  const state = { root, baseline, baselineIgnoreRoots: ignoredDirs, evidence: {} }
+
+  assert.deepEqual(Object.keys(baseline), [])
+  assert.equal(classifyPath(state, path.join(root, '.git', 'config')), 'preexisting')
+  assert.equal(classifyPath(state, path.join(root, 'node_modules', 'm.js')), 'preexisting')
+  assert.equal(classifyPath(state, path.join(root, '.git')), 'preexisting')
+
+  const fresh = { root, baseline, evidence: {} } // no baselineIgnoreRoots -> unknown
+  assert.equal(classifyPath(fresh, path.join(root, '.git', 'config')), 'unknown')
+})
+
+test('fingerprintFile hashes multi-megabyte files identically to a full buffer hash', async (t) => {
+  const root = await tempRoot(t)
+  const target = path.join(root, 'big.bin')
+  const chunk = Buffer.alloc(1024 * 1024, 7)
+  const buffer = Buffer.concat([chunk, chunk, chunk, chunk, chunk])
+  await writeFile(target, buffer)
+
+  const fingerprint = await fingerprintFile(target)
+  assert.equal(fingerprint.size, 5 * 1024 * 1024)
+  assert.equal(fingerprint.sha256, createHash('sha256').update(buffer).digest('hex'))
+})

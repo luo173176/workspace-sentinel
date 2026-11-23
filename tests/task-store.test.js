@@ -2,7 +2,9 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import path from 'node:path'
 import os from 'node:os'
-import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { spawn } from 'node:child_process'
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 
 import { observeCreated } from '../src/core/evidence.js'
 import {
@@ -101,6 +103,56 @@ test('root locks reject concurrent finalization and release afterward', async (t
     await assert.rejects(withRootLock(state, async () => {}), { code: 'TASK_ROOT_LOCKED' })
   })
   await withRootLock(state, async () => {})
+})
+
+function lockPathFor(state) {
+  const key = createHash('sha256').update(state.realRoot).digest('hex')
+  return path.join(state.dataDir, 'locks', `${key}.lock`)
+}
+
+async function plantLock(state, payload) {
+  const lockPath = lockPathFor(state)
+  await mkdir(path.dirname(lockPath), { recursive: true })
+  await writeFile(lockPath, JSON.stringify(payload))
+  return lockPath
+}
+
+async function deadPid() {
+  const child = spawn(process.execPath, ['-e', '0'], { stdio: 'ignore' })
+  const pid = child.pid
+  await new Promise((resolve) => child.on('exit', resolve))
+  return pid
+}
+
+test('withRootLock reclaims a stale lock left by a dead process', async (t) => {
+  const { state } = await setup(t, 'software')
+  const pid = await deadPid()
+  const lockPath = await plantLock(state, {
+    taskId: 'crashed-task',
+    pid,
+    createdAt: new Date().toISOString(),
+  })
+
+  let ran = false
+  await withRootLock(state, async () => {
+    ran = true
+    const held = JSON.parse(await readFile(lockPath, 'utf8'))
+    assert.equal(held.pid, process.pid)
+  })
+
+  assert.equal(ran, true)
+  await assert.rejects(access(lockPath), (error) => error.code === 'ENOENT')
+})
+
+test('withRootLock refuses a lock held by a live process', async (t) => {
+  const { state } = await setup(t, 'software')
+  await plantLock(state, {
+    taskId: 'live-task',
+    pid: process.pid,
+    createdAt: new Date().toISOString(),
+  })
+
+  await assert.rejects(withRootLock(state, async () => {}), { code: 'TASK_ROOT_LOCKED' })
 })
 
 test('assertFingerprintCurrent detects edits after planning', async (t) => {

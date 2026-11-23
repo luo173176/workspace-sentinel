@@ -22,7 +22,7 @@ function fakeContext(dataDir) {
       return () => handlers.delete(event)
     },
   }
-  apply(ctx, dataDir ? { dataDir } : {})
+  apply(ctx, { ...(dataDir ? { dataDir } : {}), ...(arguments[1] ?? {}) })
   return { ctx, handlers }
   }
 
@@ -134,7 +134,7 @@ test('tools/result records evidence for successful direct writes', async (t) => 
   assert.deepEqual(Object.keys(evidence), ['output.txt'])
   })
 
-test('completed turn finalizes a single selected artifact and deletes its intermediate', async (t) => {
+test('completed turn does NOT auto-finalize by default (explicit finalize intent required)', async (t) => {
   const { root, state, dataDir } = await workspace(t)
   const final = path.join(root, 'final.pptx')
   const draft = path.join(root, 'draft.tmp')
@@ -145,7 +145,30 @@ test('completed turn finalizes a single selected artifact and deletes its interm
   await updateTask(state, () => {})
   await setArtifactPlan(state, { candidates: [{ path: final, support: [] }], intermediates: [draft] })
 
-  const { handlers } = fakeContext(dataDir)
+  const { handlers } = fakeContext(dataDir) // no autoFinalizeOnTurnEnd -> default off
+  await handlers.get('session/event')(
+    { id: 'dsh-session', header: { cwd: root } },
+    { type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+  )
+
+  const reloaded = await loadTask(state.dataDir, state.id)
+  assert.equal(reloaded.status, 'ready-to-finalize')
+  assert.equal(await readFile(final, 'utf8'), 'final')
+  assert.equal(await readFile(draft, 'utf8'), 'draft')
+  })
+
+test('autoFinalizeOnTurnEnd opt-in restores the legacy turn-end finalize', async (t) => {
+  const { root, state, dataDir } = await workspace(t)
+  const final = path.join(root, 'final.pptx')
+  const draft = path.join(root, 'draft.tmp')
+  await writeFile(final, 'final')
+  await writeFile(draft, 'draft')
+  await observeCreated(state, final, 'tool-final')
+  await observeCreated(state, draft, 'tool-draft')
+  await updateTask(state, () => {})
+  await setArtifactPlan(state, { candidates: [{ path: final, support: [] }], intermediates: [draft] })
+
+  const { handlers } = fakeContext(dataDir, { autoFinalizeOnTurnEnd: true })
   await handlers.get('session/event')(
     { id: 'dsh-session', header: { cwd: root } },
     { type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },

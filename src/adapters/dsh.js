@@ -10,14 +10,29 @@ import {
 
 const WRITE_TOOLS = new Set(['write', 'write_file', 'create_file'])
 const EDIT_TOOLS = new Set(['edit', 'edit_file', 'multi_edit'])
-const SHELL_TOOLS = new Set(['bash', 'shell', 'exec', 'run_command', 'terminal', 'cmd'])
+// DSH ships its shell tool as `pwsh` (Windows) / `bash`; keep the others for
+// portability so shell evidence is still recorded on any host.
+const SHELL_TOOLS = new Set(['bash', 'shell', 'exec', 'run_command', 'terminal', 'cmd', 'pwsh', 'powershell'])
 
 export function resolveDshDataDir() {
   const home = process.env.DSH_HOME || path.join(os.homedir(), '.dsh')
   return path.resolve(home, 'workspace-sentinel')
 }
 
-function sessionOf(exec) {
+// Real DSH `ToolExecution.agent` is `{ readonly id: SessionId }` only — it has
+// no `.session` property. Resolve the live Session from the agent's id through
+// the injected `ctx.sessions.get(id)` lookup; fall back to `agent.session` so
+// the offline unit-test fixtures (which model a richer agent) still work.
+function sessionOf(exec, resolveSession) {
+  const id = exec?.agent?.id
+  if (resolveSession && id) {
+    try {
+      const session = resolveSession(id)
+      if (session) return session
+    } catch {
+      // fall through to the legacy shape
+    }
+  }
   return exec?.agent?.session ?? null
 }
 
@@ -83,6 +98,12 @@ function hookInput(eventName, session, extra) {
 
 export function createDshAdapter(options = {}) {
   const dataDir = path.resolve(options.dataDir ?? resolveDshDataDir())
+  const resolveSession = typeof options.resolveSession === 'function' ? options.resolveSession : null
+  // A completed turn must NOT silently finalize an artifact task. Finalization
+  // is a destructive, quarantining step that requires an explicit finalize
+  // intent (the plugin CLI `finalize`, which re-verifies every fingerprint).
+  // Keep the legacy turn-end auto-finalize only as an explicit opt-in.
+  const autoFinalizeOnTurnEnd = options.autoFinalizeOnTurnEnd === true
 
   async function resolveTask(session) {
     const cwd = sessionCwd(session)
@@ -91,7 +112,7 @@ export function createDshAdapter(options = {}) {
   }
 
   async function preExecute(exec, next) {
-    const session = sessionOf(exec)
+    const session = sessionOf(exec, resolveSession)
     if (!session) return next()
     const task = await resolveTask(session)
     if (task?.mode === 'software' && isSoftwareFinalizeInvocation(exec)) {
@@ -133,7 +154,7 @@ export function createDshAdapter(options = {}) {
 
   async function recordResult(exec, result) {
     if (result?.isError !== false) return
-    const session = sessionOf(exec)
+    const session = sessionOf(exec, resolveSession)
     if (!session) return
     const task = await resolveTask(session)
     const normalized = normalizeTool(exec)
@@ -146,6 +167,7 @@ export function createDshAdapter(options = {}) {
   }
 
   async function onSessionEvent(session, event) {
+    if (!autoFinalizeOnTurnEnd) return
     if (event?.type !== 'turn/end' || event?.data?.reason?.kind !== 'completed') return
     const task = await resolveTask(session)
     if (!task || task.mode !== 'artifact') return
